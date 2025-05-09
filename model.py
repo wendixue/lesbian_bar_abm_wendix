@@ -1,36 +1,74 @@
 import mesa
 from mesa.datacollection import DataCollector
-from agent import PersonAgent, Bar, IDENTITY_GROUPS
+from agent import IDENTITY_GROUPS, BASE_BELONGING_MATRIX, Bar, PersonAgent
+from mesa.visualization.utils import force_update
+import numpy as np
 
-# 自定义激活器替代RandomActivation
 class CustomActivation:
-    """自定义激活器，替代mesa.time.RandomActivation"""
+    """Custom activator for synchronized agent updates"""
     def __init__(self, model):
         self.model = model
         self.agents = []
         self.steps = 0
     
     def add(self, agent):
-        """添加一个Agent到调度器
-        
-        Args:
-            agent: Agent实例
-        """
         self.agents.append(agent)
     
     def step(self):
-        """执行一个步骤：随机顺序激活所有Agent"""
-        # 随机打乱Agent顺序
+   
+        # Randomly shuffle agent order (for action order, but state updates are synchronized)
         shuffled = self.agents.copy()
         self.model.random.shuffle(shuffled)
         
-        # 顺序执行每个Agent的step方法
-        print(f"执行 {len(shuffled)} 个Agent的step方法")
-        for agent in shuffled:
-            agent.step()
+        # Phase 1: All agents choose bars but don't enter immediately
+        bar_choices = {}  # Store each agent's choice {agent_id: bar_id}
         
-        # 增加步数计数
+        print(f"Phase 1: {len(shuffled)} agents choose bars")
+        for agent in shuffled:
+            # Skip permanently exited agents
+            if agent.status == "permanently_exited" or agent.permanent_exit:
+                continue
+                
+            # Process temporary exit status internally in choose_bar method
+            chosen_bar_id = agent.choose_bar()  # Choose only, don't enter
+            if chosen_bar_id is not None:
+                bar_choices[agent.unique_id] = chosen_bar_id
+        
+        # Phase 2: All agents enter their chosen bars simultaneously
+        print(f"Phase 2: Agents enter bars simultaneously")
+        for agent in self.agents:
+            # Skip permanently exited or temporarily exited agents
+            if agent.status == "permanently_exited" or agent.permanent_exit or agent.status == "temp_exited" or agent.unique_id not in bar_choices:
+                continue
+                
+            chosen_bar_id = bar_choices[agent.unique_id]
+            agent.current_bar = chosen_bar_id
+            
+            # Add self to bar visitor list
+            bar = self.model.bars[chosen_bar_id]
+            bar.add_visitors([agent.identity_group])
+        
+        # Phase 3: Calculate belonging and update memories
+        print(f"Phase 3: Calculate belonging and update memories")
+        for agent in self.agents:
+            # Skip permanently exited or temporarily exited agents
+            if agent.status == "permanently_exited" or agent.permanent_exit or agent.status == "temp_exited" or agent.unique_id not in bar_choices:
+                continue
+                
+            chosen_bar_id = bar_choices[agent.unique_id]
+            bar = self.model.bars[chosen_bar_id]
+            
+            # Calculate and update belonging memory for this bar
+            belonging_score = agent.calculate_belonging(bar)
+            agent.update_memory(chosen_bar_id, belonging_score)
+            
+            print(f"Agent {agent.unique_id} ({agent.identity_group}) entered {bar.name}, belonging: {belonging_score:.2f}")
+        
+        # Increment step counter
         self.steps += 1
+        
+        # Force update visualization
+        force_update()
 
 class LGBTQBarModel(mesa.Model):
     def __init__(self, 
@@ -38,95 +76,74 @@ class LGBTQBarModel(mesa.Model):
                  num_bars=2, 
                  alpha=0.4,
                  init_identity_ratios=None,
-                 QW_ratio=0.4,
-                 NQW_ratio=0.3,
-                 QNW_ratio=0.2,
-                 NQNW_ratio=0.1,
-                 bar_fixed_tolerances=None,
+                 QW_ratio=0.5,
+                 NQW_ratio=0.25,
+                 QNW_ratio=0.25,
+                 adaptive_update_interval=10,
+                 tolerance_factor=0.01,
+                 agent_threshold=0.5,  
                  seed=None):
-        """初始化模型
-        
-        Args:
-            population_size: Agent总数
-            num_bars: 酒吧数量
-            alpha: 归属感计算中酒吧容忍度的权重
-            init_identity_ratios: 初始身份群体比例字典（如果提供）
-            QW_ratio: Queer Women的初始比例（如果init_identity_ratios未提供）
-            NQW_ratio: Non-Queer Women的初始比例（如果init_identity_ratios未提供）
-            QNW_ratio: Queer Non-Women的初始比例（如果init_identity_ratios未提供）
-            NQNW_ratio: Non-Queer Non-Women的初始比例（如果init_identity_ratios未提供）
-            bar_fixed_tolerances: 酒吧的固定容忍度
-            seed: 随机种子
-        """
+
         super().__init__(seed=seed)
         self.num_agents = population_size
         self.num_bars = num_bars
-        self.alpha = alpha  # 归属感计算中酒吧容忍度的权重
-        self.schedule = CustomActivation(self)  # 使用自定义激活器
-        self._agent_storage = self.schedule  # 使用其他名称存储Agent
+        self.alpha = alpha  # Weight of bar tolerance in belonging calculation
+        self.schedule = CustomActivation(self)  # Use custom activator
+        self._agent_storage = self.schedule  
+        self.running = True  
+        self.agent_threshold = agent_threshold  
         
-        # 设置初始身份群体比例
+        # Set initial identity group ratios
         if init_identity_ratios is None:
-            # 使用单独的比例参数
-            total = QW_ratio + NQW_ratio + QNW_ratio + NQNW_ratio
+            # Use individual ratio parameters
+            total = QW_ratio + NQW_ratio + QNW_ratio
             if total == 0:
-                # 避免除以0的情况
+                # Avoid division by zero
                 init_identity_ratios = {
-                    "QW": 0.25,
-                    "NQW": 0.25,
-                    "QNW": 0.25,
-                    "NQNW": 0.25
+                    "QW": 0.33,
+                    "NQW": 0.33,
+                    "QNW": 0.34
                 }
             else:
-                # 归一化比例，确保总和为1
+                # Normalize ratios to ensure sum is 1
                 init_identity_ratios = {
                     "QW": QW_ratio / total,
                     "NQW": NQW_ratio / total,
-                    "QNW": QNW_ratio / total,
-                    "NQNW": NQNW_ratio / total
+                    "QNW": QNW_ratio / total
                 }
         
-        # 设置默认的酒吧固定容忍度 (如未指定)
-        if bar_fixed_tolerances is None:
-            # 第一个酒吧: 女同友好型
-            lesbian_bar_tolerance = {
-                "QW": 1.0,    # 完全欢迎 Queer Women
-                "NQW": 0.8,   # 较欢迎 Non-Queer Women
-                "QNW": 0.6,   # 中等欢迎 Queer Non-Women
-                "NQNW": 0.2   # 较少欢迎 Non-Queer Non-Women
-            }
-            
-            # 第二个酒吧: 中性型
-            neutral_bar_tolerance = {
-                "QW": 0.7,    # 较欢迎 Queer Women
-                "NQW": 0.7,   # 较欢迎 Non-Queer Women
-                "QNW": 0.7,   # 较欢迎 Queer Non-Women
-                "NQNW": 0.7   # 较欢迎 Non-Queer Non-Women
-            }
-            
-            bar_fixed_tolerances = [lesbian_bar_tolerance]
-            
-            # 如果有多个酒吧，添加中性酒吧
-            if num_bars > 1:
-                bar_fixed_tolerances.append(neutral_bar_tolerance)
-                
-            # 如果有更多酒吧，添加随机容忍度的酒吧
-            for _ in range(num_bars - 2):
-                random_tolerance = {
-                    group: self.random.uniform(0.3, 0.9) 
-                    for group in IDENTITY_GROUPS
-                }
-                bar_fixed_tolerances.append(random_tolerance)
+        # Set default bar fixed tolerances
+        # First bar: Women-only bar
+        women_only_bar_tolerance = {
+            "QW": 1.0,    # Fully welcome Queer Women
+            "NQW": 0.7,   # Mostly welcome Non-Queer Women
+            "QNW": 0.2    # Moderately welcome Queer Non-Women
+        }
         
-        # 创建酒吧
+        # Second bar: Queer-friendly bar
+        queer_friendly_bar_tolerance = {
+            "QW": 1.0,    # Mostly welcome Queer Women
+            "NQW": 0.2,   # Mostly welcome Non-Queer Women
+            "QNW": 0.7    # Mostly welcome Queer Non-Women
+        }
+        
+        bar_fixed_tolerances = [women_only_bar_tolerance, queer_friendly_bar_tolerance]
+        
+        # Create bars
         self.bars = []
+        bar_names = ["women_only_bar", "queer_friendly_bar"]
+        
         for i in range(num_bars):
-            bar = Bar(i, bar_fixed_tolerances[i])
+            name = bar_names[i] if i < len(bar_names) else f"Bar {i+1}"
+            # Adaptive Tolerance Parameter Passed When Creating Bar
+            bar = Bar(i, bar_fixed_tolerances[i], name=name, 
+                      adaptive_update_interval=adaptive_update_interval,
+                      tolerance_factor=tolerance_factor)
             self.bars.append(bar)
         
-        # 创建Agents
+        # Create Agents
         for i in range(self.num_agents):
-            # 根据比例分配身份群体
+            # Assign identity group based on ratios
             r = self.random.random()
             cumulative = 0
             assigned_group = None
@@ -137,107 +154,166 @@ class LGBTQBarModel(mesa.Model):
                     assigned_group = group
                     break
             
-            # 设置个体归属感阈值 (在0.5-0.8之间随机)
-            threshold = self.random.uniform(0.5, 0.8)
+            # Setting individual thresholds
+            ## Needs to be adjusted! (the range? the variation?)
+            base_threshold = agent_threshold
+            threshold_variation = 0.15 
+            threshold = self.random.uniform(
+                max(0.5, base_threshold - threshold_variation),
+                min(0.9, base_threshold + threshold_variation)
+            )
             
-            # 创建Agent
+            # Create Agent
             agent = PersonAgent(i, self, assigned_group, threshold)
             self.schedule.add(agent)
             
-            # 随机初始化对酒吧的记忆
+            # Randomly initialize bar memories
             for bar_id in range(num_bars):
-                # 添加一些随机初始记忆，促进初始流动
+                # Add some random initial memories to promote initial movement
                 initial_score = self.random.uniform(0.4, 0.9)
                 agent.update_memory(bar_id, initial_score)
         
-        # 设置数据收集器
+        # Set data collector
         model_reporters = {
-            "Bar1_QW_Ratio": lambda m: self.get_bar_group_ratio(0, "QW"),
-            "Bar1_NQW_Ratio": lambda m: self.get_bar_group_ratio(0, "NQW"),
-            "Bar1_QNW_Ratio": lambda m: self.get_bar_group_ratio(0, "QNW"),
-            "Bar1_NQNW_Ratio": lambda m: self.get_bar_group_ratio(0, "NQNW"),
-            "Bar1_Population": lambda m: self.get_bar_population(0),
-            "Bar1_IsLesbianBar": lambda m: int(self.bars[0].is_lesbian_bar),
-            "Bar1_QW_AdaptiveTolerance": lambda m: self.bars[0].adaptive_tolerance["QW"],
-            "Exited_Agents": lambda m: self.count_exited_agents(),
+            "WomenBar_QW_Ratio": lambda m: self.get_bar_group_ratio(0, "QW"),
+            "WomenBar_NQW_Ratio": lambda m: self.get_bar_group_ratio(0, "NQW"),
+            "WomenBar_QNW_Ratio": lambda m: self.get_bar_group_ratio(0, "QNW"),
+            "WomenBar_Population": lambda m: self.get_bar_population(0),
+            "WomenBar_IsLesbianBar": lambda m: int(self.bars[0].is_lesbian_bar),
+            "WomenBar_QW_AdaptiveTolerance": lambda m: self.bars[0].adaptive_tolerance["QW"],
+            "WomenBar_NQW_AdaptiveTolerance": lambda m: self.bars[0].adaptive_tolerance["NQW"],
+            "WomenBar_QNW_AdaptiveTolerance": lambda m: self.bars[0].adaptive_tolerance["QNW"],
+            "QueerBar_QW_Ratio": lambda m: self.get_bar_group_ratio(1, "QW"),
+            "QueerBar_NQW_Ratio": lambda m: self.get_bar_group_ratio(1, "NQW"),
+            "QueerBar_QNW_Ratio": lambda m: self.get_bar_group_ratio(1, "QNW"),
+            "QueerBar_Population": lambda m: self.get_bar_population(1),
+            "QueerBar_IsLesbianBar": lambda m: int(self.bars[1].is_lesbian_bar),
+            "QueerBar_QW_AdaptiveTolerance": lambda m: self.bars[1].adaptive_tolerance["QW"],
+            "QueerBar_NQW_AdaptiveTolerance": lambda m: self.bars[1].adaptive_tolerance["NQW"],
+            "QueerBar_QNW_AdaptiveTolerance": lambda m: self.bars[1].adaptive_tolerance["QNW"],
+            "TempExited_Agents": lambda m: self.count_temp_exited_agents(),
+            "PermExited_Agents": lambda m: self.count_permanently_exited_agents(),  
             "Active_QW": lambda m: self.count_active_by_group("QW"),
             "Active_NQW": lambda m: self.count_active_by_group("NQW"),
-            "Active_QNW": lambda m: self.count_active_by_group("QNW"),
-            "Active_NQNW": lambda m: self.count_active_by_group("NQNW")
+            "Active_QNW": lambda m: self.count_active_by_group("QNW")
         }
-        
-        # 如果有第二个酒吧，添加相关数据收集
-        if num_bars > 1:
-            additional_reporters = {
-                "Bar2_QW_Ratio": lambda m: self.get_bar_group_ratio(1, "QW"),
-                "Bar2_NQW_Ratio": lambda m: self.get_bar_group_ratio(1, "NQW"),
-                "Bar2_QNW_Ratio": lambda m: self.get_bar_group_ratio(1, "QNW"),
-                "Bar2_NQNW_Ratio": lambda m: self.get_bar_group_ratio(1, "NQNW"),
-                "Bar2_Population": lambda m: self.get_bar_population(1),
-                "Bar2_IsLesbianBar": lambda m: int(self.bars[1].is_lesbian_bar),
-                "Bar2_QW_AdaptiveTolerance": lambda m: self.bars[1].adaptive_tolerance["QW"]
-            }
-            model_reporters.update(additional_reporters)
             
         self.datacollector = DataCollector(model_reporters=model_reporters)
         
     def get_bar_group_ratio(self, bar_id, group):
-        """获取特定酒吧中特定群体的比例
-        
-        Args:
-            bar_id: 酒吧ID
-            group: 群体类型
-            
-        Returns:
-            float: 群体比例
-        """
+
         bar = self.bars[bar_id]
         ratios = bar.get_current_population_ratios()
         return ratios[group]
     
     def get_bar_population(self, bar_id):
-        """获取特定酒吧的总人数
-        
-        Args:
-            bar_id: 酒吧ID
-            
-        Returns:
-            int: 酒吧人数
-        """
+
         return len(self.bars[bar_id].current_visitors)
     
-    def count_exited_agents(self):
-        """计算已退出系统的Agent数量"""
-        return sum(1 for agent in self._agent_storage.agents if agent.status == "exited")
+    def count_temp_exited_agents(self):
+
+        return sum(1 for agent in self._agent_storage.agents if agent.status == "temp_exited")
+    
+    def count_permanently_exited_agents(self):
+
+        return sum(1 for agent in self._agent_storage.agents 
+                  if agent.status == "permanently_exited" or agent.permanent_exit)
     
     def count_active_by_group(self, group):
-        """计算特定群体中活跃的Agent数量
-        
-        Args:
-            group: 群体类型
-            
-        Returns:
-            int: 活跃Agent数量
-        """
+
         return sum(1 for agent in self._agent_storage.agents 
                   if agent.identity_group == group and agent.status == "active")
     
+    def get_average_belonging_matrix(self):
+
+        # Initialize average matrix with zeros
+        sum_matrix = {}
+        for from_group in IDENTITY_GROUPS:
+            sum_matrix[from_group] = {}
+            for to_group in IDENTITY_GROUPS:
+                sum_matrix[from_group][to_group] = 0.0
+        
+        # Count agents by group
+        group_counts = {group: 0 for group in IDENTITY_GROUPS}
+        
+        # Sum up all belonging values
+        for agent in self._agent_storage.agents:
+            group = agent.identity_group
+            group_counts[group] += 1
+            
+            for to_group in IDENTITY_GROUPS:
+                sum_matrix[group][to_group] += agent.belonging_matrix[group][to_group]
+        
+        # Calculate averages
+        avg_matrix = {}
+        for from_group in IDENTITY_GROUPS:
+            avg_matrix[from_group] = {}
+            for to_group in IDENTITY_GROUPS:
+                if group_counts[from_group] > 0:
+                    avg_matrix[from_group][to_group] = sum_matrix[from_group][to_group] / group_counts[from_group]
+                else:
+                    avg_matrix[from_group][to_group] = 0.0
+        
+        return avg_matrix
+    
+    def get_belonging_matrix_stats(self):
+
+        # Initialize data structure to collect all values
+        all_values = {}
+        for from_group in IDENTITY_GROUPS:
+            all_values[from_group] = {}
+            for to_group in IDENTITY_GROUPS:
+                all_values[from_group][to_group] = []
+        
+        # Collect all belonging values
+        for agent in self._agent_storage.agents:
+            group = agent.identity_group
+            for to_group in IDENTITY_GROUPS:
+                all_values[group][to_group].append(agent.belonging_matrix[group][to_group])
+        
+        # Calculate statistics
+        stats = {}
+        for from_group in IDENTITY_GROUPS:
+            stats[from_group] = {}
+            for to_group in IDENTITY_GROUPS:
+                values = all_values[from_group][to_group]
+                if values:
+                    stats[from_group][to_group] = {
+                        "min": min(values),
+                        "max": max(values),
+                        "mean": np.mean(values),
+                        "std": np.std(values),
+                        "base": BASE_BELONGING_MATRIX[from_group][to_group]
+                    }
+                else:
+                    stats[from_group][to_group] = {
+                        "min": 0.0,
+                        "max": 0.0,
+                        "mean": 0.0,
+                        "std": 0.0,
+                        "base": BASE_BELONGING_MATRIX[from_group][to_group]
+                    }
+        
+        return stats
+    
     def step(self):
-        """模型每步运行逻辑"""
-        # 清空酒吧当前访客
+
+        # Clear current visitors from bars
         for bar in self.bars:
             bar.current_visitors = []
         
-        # 打印信息 (调试用)
-        print(f"\n=== 执行第 {self.schedule.steps if hasattr(self.schedule, 'steps') else '?'} 步 ===")
-        print(f"当前活跃Agent数: {len([a for a in self._agent_storage.agents if a.status == 'active'])}")
+        # Print information (for debugging)
+        print(f"\n=== Executing step {self.schedule.steps if hasattr(self.schedule, 'steps') else '?'} ===")
+        print(f"Current active agents: {len([a for a in self._agent_storage.agents if a.status == 'active'])}")
+        print(f"Temporarily exited agents: {self.count_temp_exited_agents()}")
+        print(f"Permanently exited agents: {self.count_permanently_exited_agents()}")
         
-        # 执行所有Agent的步骤
+        # Execute all agents' steps
         self.schedule.step()
         
-        # 结束酒吧的当前轮次
+        # End current round for bars
         for bar in self.bars:
             bar.end_round()
         
-        # 收集数据
+        # Collect data
         self.datacollector.collect(self)

@@ -4,231 +4,351 @@ import solara
 import matplotlib.pyplot as plt
 from matplotlib.figure import Figure
 import random
+from mesa.visualization.utils import update_counter, force_update
 
-# 创建自定义组件来显示Agent位置分布
+# Create agent map component
 @solara.component
 def AgentMapComponent(model):
+
+    update_counter.get()
+    
     fig = Figure(figsize=(10, 6))
     ax = fig.add_subplot(111)
     
-    # 设置固定的坐标位置
-    bar_positions = [(0.3, 0.5), (0.7, 0.5)]  # 酒吧0和酒吧1的位置
-    exit_position = (0.5, 0.1)  # 退出区域的位置
+    # Set fixed coordinates for bar and exit zones
+    bar_positions = [(0.3, 0.5), (0.7, 0.5)] 
+    temp_exit_position = (0.5, 0.2)  
+    perm_exit_position = (0.5, 0.8)
     
-    # 绘制酒吧位置
+    # Draw bar positions
     for i, pos in enumerate(bar_positions):
         if i < len(model.bars):
             ax.scatter(pos[0], pos[1], s=300, color='gray', alpha=0.5, marker='s')
-            ax.text(pos[0], pos[1], f'酒吧{i+1}', ha='center', va='center')
+            ax.text(pos[0], pos[1], model.bars[i].name, ha='center', va='center', fontsize=9)
     
-    # 绘制退出区域
-    ax.scatter(exit_position[0], exit_position[1], s=300, color='black', alpha=0.2, marker='s')
-    ax.text(exit_position[0], exit_position[1], '已退出', ha='center', va='center')
+    # Draw temporary exit zone
+    ax.scatter(temp_exit_position[0], temp_exit_position[1], s=300, color='orange', alpha=0.2, marker='s')
+    ax.text(temp_exit_position[0], temp_exit_position[1], 'Temp Exit (10 rounds)', ha='center', va='center', fontsize=8)
     
-    # 为每种身份群体定义颜色
+    # Draw permanent exit zone
+    ax.scatter(perm_exit_position[0], perm_exit_position[1], s=300, color='red', alpha=0.2, marker='s')
+    ax.text(perm_exit_position[0], perm_exit_position[1], 'Permanent Exit', ha='center', va='center', fontsize=8)
+    
+    # Define colors for each identity group
     colors = {
         "QW": "red",
         "NQW": "pink", 
-        "QNW": "purple",
-        "NQNW": "blue"
+        "QNW": "purple"
     }
     
-    # 绘制每个agent
+    # Count agents in each area
+    temp_count = 0
+    perm_count = 0
+    bar_counts = [0, 0]
+    
+    # Draw each agent
     for agent in model.schedule.agents:
-        # 决定agent的位置
-        if agent.status == "exited":
-            # 如果已退出，在退出区域周围随机放置
-            x = exit_position[0] + (random.random() - 0.5) * 0.2
-            y = exit_position[1] + (random.random() - 0.5) * 0.2
+        # Determine agent position
+        if agent.status == "permanently_exited" or agent.permanent_exit:
+            # If permanently exited, place randomly near permanent exit zone
+            x = perm_exit_position[0] + (random.random() - 0.5) * 0.2
+            y = perm_exit_position[1] + (random.random() - 0.5) * 0.2
+            perm_count += 1
+        elif agent.status == "temp_exited":
+            # If temporarily exited, place randomly near temporary exit zone
+            x = temp_exit_position[0] + (random.random() - 0.5) * 0.2
+            y = temp_exit_position[1] + (random.random() - 0.5) * 0.2
+            temp_count += 1
         elif agent.current_bar is not None:
-            # 如果在酒吧中，在对应酒吧周围随机放置
+            # If in a bar, place randomly near the bar location
             bar_pos = bar_positions[agent.current_bar]
             x = bar_pos[0] + (random.random() - 0.5) * 0.2
             y = bar_pos[1] + (random.random() - 0.5) * 0.2
+            if agent.current_bar < len(bar_counts):
+                bar_counts[agent.current_bar] += 1
         else:
-            # 未决定去向的agent，不显示
+            # Skip if no valid location
             continue
         
-        # 根据身份群体绘制不同颜色的点
+        # Draw point using identity group color
         ax.scatter(x, y, s=50, color=colors[agent.identity_group], alpha=0.7)
     
-    # 添加图例说明
+    # Add legend
     for group, color in colors.items():
         ax.scatter([], [], color=color, label=group)
     
     ax.legend(loc='upper right')
     
-    # 设置坐标轴范围和标题
+    # Set axis limits and plot title
     ax.set_xlim(0, 1)
     ax.set_ylim(0, 1)
-    ax.set_title('Agent 位置分布')
     
-    # 隐藏坐标轴
+    # Show agent count summary (for debugging)
+    step_text = model.schedule.steps if hasattr(model.schedule, "steps") else 0
+    title = f'Agent Distribution (Step: {step_text}, Active: {sum(bar_counts)}, Temp: {temp_count}, Perm: {perm_count})'
+    ax.set_title(title)
+    
+    # Hide axis ticks
     ax.set_xticks([])
     ax.set_yticks([])
     
     return solara.FigureMatplotlib(figure=fig)
 
-# 创建酒吧人群比例图
+# Create bar population ratio component
 @solara.component
-def BarChartComponent(model):
-    fig = Figure(figsize=(10, 6))
-    ax = fig.add_subplot(111)
-    
-    # 获取各个酒吧的人群比例
-    bar_labels = []
-    qw_ratios = []
-    nqw_ratios = []
-    qnw_ratios = []
-    nqnw_ratios = []
-    
-    for i, bar in enumerate(model.bars):
-        if i < len(model.bars):  # 确保酒吧索引有效
-            ratios = bar.get_current_population_ratios()
-            bar_labels.append(f"酒吧{i+1}")
-            qw_ratios.append(ratios["QW"])
-            nqw_ratios.append(ratios["NQW"])
-            qnw_ratios.append(ratios["QNW"])
-            nqnw_ratios.append(ratios["NQNW"])
-    
-    # 如果没有数据，添加一个空的占位符
-    if not bar_labels:
-        return solara.Markdown("没有酒吧数据可显示")
-    
-    # 创建堆叠柱状图
-    x = range(len(bar_labels))
-    width = 0.6
-    
-    ax.bar(x, qw_ratios, width, label='QW', color='red')
-    ax.bar(x, nqw_ratios, width, bottom=qw_ratios, label='NQW', color='pink')
-    
-    # 计算第三层的起始位置
-    third_bottom = [qw + nqw for qw, nqw in zip(qw_ratios, nqw_ratios)]
-    ax.bar(x, qnw_ratios, width, bottom=third_bottom, label='QNW', color='purple')
-    
-    # 计算第四层的起始位置
-    fourth_bottom = [qw + nqw + qnw for qw, nqw, qnw in zip(qw_ratios, nqw_ratios, qnw_ratios)]
-    ax.bar(x, nqnw_ratios, width, bottom=fourth_bottom, label='NQNW', color='blue')
-    
-    ax.set_title('酒吧人群比例')
-    ax.set_ylabel('比例')
-    ax.set_xticks(x)
-    ax.set_xticklabels(bar_labels)
-    ax.legend()
-    
-    return solara.FigureMatplotlib(figure=fig)
+def BarRatiosComponent(model):
 
-# 创建自定义组件来显示酒吧状态
+    update_counter.get()
+    
+    # Get current simulation step
+    current_step = model.schedule.steps if hasattr(model.schedule, 'steps') else 0
+    
+    # Initialize time series history on first step
+    if not hasattr(model, 'time_series_history'):
+        model.time_series_history = {
+            'steps': [],
+            'bars': {},
+            'lesbian_status': {},  
+        }
+        # Initialize data structures for each bar
+        for i in range(len(model.bars)):
+            model.time_series_history['bars'][i] = {
+                'QW': [],
+                'NQW': [],
+                'QNW': []
+            }
+            model.time_series_history['lesbian_status'][i] = [] 
+    
+    # Only record once per step
+    if not model.time_series_history['steps'] or model.time_series_history['steps'][-1] != current_step:
+        # Record current step
+        model.time_series_history['steps'].append(current_step)
+        
+        # Collect data per bar using visitor history
+        for bar_id, bar in enumerate(model.bars):
+            # Use last round of visitor history
+            if bar.visitor_history and len(bar.visitor_history) > 0:
+                last_visitors = bar.visitor_history[-1]
+                
+                # Count visitors by group
+                counts = {'QW': 0, 'NQW': 0, 'QNW': 0}
+                for visitor in last_visitors:
+                    counts[visitor] += 1
+                    
+                # Log to time series history
+                for group in counts:
+                    model.time_series_history['bars'][bar_id][group].append(counts[group])
+            else:
+                # Append zero if no history
+                for group in ['QW', 'NQW', 'QNW']:
+                    model.time_series_history['bars'][bar_id][group].append(0)
+            
+            # Record lesbian bar symbolic identity
+            model.time_series_history['lesbian_status'][bar_id].append(int(bar.is_lesbian_bar))
+    
+    # Create time series plot for each bar
+    with solara.Column():
+        for bar_id in range(len(model.bars)):
+            solara.Markdown(f"### {model.bars[bar_id].name} Population Trends")
+            
+            # Create visitor trend plot
+            fig = Figure(figsize=(10, 6))
+            ax = fig.add_subplot(111)
+            
+            # Plot lines for each identity group
+            steps = model.time_series_history['steps']
+            
+            # Define colors for each identity group
+            colors = {
+                "QW": "red",
+                "NQW": "pink", 
+                "QNW": "purple"
+            }
+            
+            # draw lines for each group
+            for group, color in colors.items():
+                values = model.time_series_history['bars'][bar_id][group]
+                ax.plot(steps, values, label=group, color=color, marker='o', markersize=4)
+            
+            # Set plot properties
+            ax.set_xlabel('Step')
+            ax.set_ylabel('Visitor Count')
+            ax.set_title(f'{model.bars[bar_id].name} Visitor Count by Group')
+            ax.grid(True, linestyle='--', alpha=0.7)
+            ax.legend()
+            
+            # Set integer x-axis ticks
+            if len(steps) > 1:
+                ax.set_xticks(range(0, max(steps) + 1, max(1, max(steps) // 10)))
+            
+            solara.FigureMatplotlib(figure=fig)
+
+# Create bar status component
 @solara.component
 def BarStatusComponent(model):
+    # Ensure component updates with model state
+    update_counter.get()
+    
+    # Get current simulation step
+    current_step = model.schedule.steps if hasattr(model.schedule, 'steps') else 0
+    
     with solara.Column():
         for i, bar in enumerate(model.bars):
-            # 获取各个群体在该酒吧的比例
+            # Get current population ratios for bar
             ratios = bar.get_current_population_ratios()
             
-            solara.Markdown(f"### 酒吧 {i+1}")
-            solara.Markdown(f"女同酒吧状态: {'是' if bar.is_lesbian_bar else '否'}")
-            solara.Markdown(f"访客数量: {len(bar.current_visitors)}")
-            solara.Markdown(f"QW比例: {ratios['QW']:.2f}")
-            solara.Markdown(f"NQW比例: {ratios['NQW']:.2f}")
-            solara.Markdown(f"QNW比例: {ratios['QNW']:.2f}")
-            solara.Markdown(f"NQNW比例: {ratios['NQNW']:.2f}")
-            solara.Markdown(f"对QW的适应性容忍度: {bar.adaptive_tolerance['QW']:.2f}")
+            solara.Markdown(f"### {bar.name} Status (Step: {current_step})")
             
-            # 使用水平线分隔不同的酒吧信息
+            # Create QW ratio and lesbian identity status plot
+            if hasattr(model, 'time_series_history') and model.time_series_history['steps']:
+                steps = model.time_series_history['steps']
+                
+                fig = Figure(figsize=(10, 4))
+                ax = fig.add_subplot(111)
+                
+                # Get QW ratio data
+                qw_ratios = []
+                for j in range(len(steps)):
+                    try:
+                        total = sum(model.time_series_history['bars'][i][group][j] for group in ["QW", "NQW", "QNW"])
+                        qw_ratio = model.time_series_history['bars'][i]["QW"][j] / total if total > 0 else 0
+                        qw_ratios.append(qw_ratio)
+                    except IndexError:
+                        qw_ratios.append(0)
+                
+                # Get lesbian bar status data
+                lesbian_status = model.time_series_history['lesbian_status'][i]
+                if len(lesbian_status) < len(steps):
+                    # Pad with zeros if data lengths mismatch
+                    lesbian_status = lesbian_status + [0] * (len(steps) - len(lesbian_status))
+                
+                # Plot QW ratio curve
+                line1 = ax.plot(steps, qw_ratios, label="QW Ratio", color="red", marker='o', markersize=4)
+                ax.set_ylabel('QW Ratio', color='red')
+                ax.set_ylim(0, 1)
+                
+                # Use second Y-axis for lesbian identity status
+                ax2 = ax.twinx()
+                line2 = ax2.plot(steps, lesbian_status, label="Lesbian Bar Status", color="blue", linestyle='--', linewidth=2)
+                ax2.set_ylabel('Lesbian Bar Status', color='blue')
+                ax2.set_ylim(-0.1, 1.1)
+                ax2.set_yticks([0, 1])
+                ax2.set_yticklabels(['No', 'Yes'])
+                
+                # Add threshold reference lines
+                ax.axhline(y=0.3, color='gray', linestyle='--', alpha=0.5)
+                ax.axhline(y=0.6, color='gray', linestyle='--', alpha=0.5)
+                
+                # Combine legends
+                lines = line1 + line2
+                labels = [l.get_label() for l in lines]
+                ax.legend(lines, labels, loc="upper right")
+                
+                # Set plot properties
+                ax.set_xlabel('Step')
+                ax.set_title(f'{bar.name} QW Ratio & Lesbian Bar Status')
+                ax.grid(True, linestyle='--', alpha=0.7)
+                
+                # Set integer x-axis ticks
+                if len(steps) > 1:
+                    ax.set_xticks(range(0, max(steps) + 1, max(1, max(steps) // 10)))
+                
+                solara.FigureMatplotlib(figure=fig)
+            
+            # Display current lesbian identity status
+            is_lesbian = bar.is_lesbian_bar
+            status_text = "Yes" if is_lesbian else "No"
+            
+            # Show basic stats for bar
+            solara.Markdown(f"**Current Lesbian Bar Status:** {status_text}")
+            solara.Markdown(f"**Current QW Ratio:** {ratios['QW']:.2f}")
+            solara.Markdown(f"**Current NQW Ratio:** {ratios['NQW']:.2f}")
+            solara.Markdown(f"**Current QNW Ratio:** {ratios['QNW']:.2f}")
+            solara.Markdown(f"**Current Visitor Count:** {len(bar.current_visitors)}")
+
             if i < len(model.bars) - 1:
                 solara.Markdown("---")
 
-# 创建自定义组件来显示人群活跃状态
-@solara.component
-def PopulationStatusComponent(model):
-    with solara.Column():
-        exited = model.count_exited_agents()
-        active_qw = model.count_active_by_group("QW")
-        active_nqw = model.count_active_by_group("NQW")
-        active_qnw = model.count_active_by_group("QNW")
-        active_nqnw = model.count_active_by_group("NQNW")
-        
-        solara.Markdown(f"### 人群活跃状态")
-        solara.Markdown(f"退出系统: {exited}")
-        solara.Markdown(f"活跃QW: {active_qw}")
-        solara.Markdown(f"活跃NQW: {active_nqw}")
-        solara.Markdown(f"活跃QNW: {active_qnw}")
-        solara.Markdown(f"活跃NQNW: {active_nqnw}")
 
-# 定义模型参数
 model_params = {
     "seed": {
         "type": "InputText",
         "value": 42,
-        "label": "随机种子",
+        "label": "Random Seed",
     },
     "population_size": Slider(
-        label="Agent总数",
+        label="Total Agents",
         value=200,
         min=50,
         max=500,
         step=50,
     ),
-    "num_bars": Slider(
-        label="酒吧数量",
-        value=2,
-        min=1,
-        max=3,
-        step=1,
-    ),
+
     "alpha": Slider(
-        label="容忍度权重 (alpha)",
+        label="Tolerance Weight (alpha)",
         value=0.4,
         min=0.0,
         max=1.0,
         step=0.1,
     ),
+
+    ## One of the ratio slider need to be deleted!
     "QW_ratio": Slider(
-        label="Queer Women占比",
+        label="Queer Women Ratio",
         value=0.4,
         min=0.0,
         max=1.0,
         step=0.05,
     ),
     "NQW_ratio": Slider(
-        label="Non-Queer Women占比",
+        label="Non-Queer Women Ratio",
         value=0.3,
         min=0.0,
         max=1.0,
         step=0.05,
     ),
     "QNW_ratio": Slider(
-        label="Queer Non-Women占比",
-        value=0.2,
+        label="Queer Non-Women Ratio",
+        value=0.3,
         min=0.0,
         max=1.0,
         step=0.05,
     ),
-    "NQNW_ratio": Slider(
-        label="Non-Queer Non-Women占比",
-        value=0.1,
-        min=0.0,
-        max=1.0,
-        step=0.05,
+    "adaptive_update_interval": Slider(
+        label="Adaptive Tolerance Update Interval",
+        value=10,
+        min=1,
+        max=30,
+        step=1,
     ),
+    "tolerance_factor": Slider(
+        label="Tolerance Factor",
+        value=0.01,
+        min=0.01,
+        max=0.1,
+        step=0.01,
+    ),
+    "agent_threshold": Slider(
+        label="Agent Belonging Threshold",
+        value=0.5,
+        min=0.1,
+        max=0.9,
+        step=0.05,
+    )
 }
 
-# 创建可视化组件列表
 components = [
     AgentMapComponent,
-    BarChartComponent,
-    BarStatusComponent,
-    PopulationStatusComponent
+    BarRatiosComponent,
+    BarStatusComponent 
 ]
 
-# 创建模型实例
 model = LGBTQBarModel()
 
-# 创建可视化页面
 page = SolaraViz(
     model,
     components=components,
     model_params=model_params,
-    name="归属感与文化张力驱动的女同酒吧演化模拟",
+    name="Lesbian Bars Simulation",
+    render_interval=1, 
 )

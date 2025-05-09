@@ -80,14 +80,14 @@ class LGBTQBarModel(mesa.Model):
                  NQW_ratio=0.25,
                  QNW_ratio=0.25,
                  adaptive_update_interval=10,
-                 tolerance_factor=0.01,
+                 affinity_factor=0.01,
                  agent_threshold=0.5,  
                  seed=None):
 
         super().__init__(seed=seed)
         self.num_agents = population_size
         self.num_bars = num_bars
-        self.alpha = alpha  # Weight of bar tolerance in belonging calculation
+        self.alpha = alpha  # Weight of bar affinity in belonging calculation
         self.schedule = CustomActivation(self)  # Use custom activator
         self._agent_storage = self.schedule  
         self.running = True  
@@ -112,22 +112,22 @@ class LGBTQBarModel(mesa.Model):
                     "QNW": QNW_ratio / total
                 }
         
-        # Set default bar fixed tolerances
+        # Set default bar fixed affinities
         # First bar: Women-only bar
-        women_only_bar_tolerance = {
+        women_only_bar_affinity = {
             "QW": 1.0,    # Fully welcome Queer Women
             "NQW": 0.7,   # Mostly welcome Non-Queer Women
             "QNW": 0.2    # Moderately welcome Queer Non-Women
         }
         
         # Second bar: Queer-friendly bar
-        queer_friendly_bar_tolerance = {
+        queer_friendly_bar_affinity = {
             "QW": 1.0,    # Mostly welcome Queer Women
             "NQW": 0.2,   # Mostly welcome Non-Queer Women
             "QNW": 0.7    # Mostly welcome Queer Non-Women
         }
         
-        bar_fixed_tolerances = [women_only_bar_tolerance, queer_friendly_bar_tolerance]
+        bar_fixed_affinities = [women_only_bar_affinity, queer_friendly_bar_affinity]
         
         # Create bars
         self.bars = []
@@ -135,10 +135,10 @@ class LGBTQBarModel(mesa.Model):
         
         for i in range(num_bars):
             name = bar_names[i] if i < len(bar_names) else f"Bar {i+1}"
-            # Adaptive Tolerance Parameter Passed When Creating Bar
-            bar = Bar(i, bar_fixed_tolerances[i], name=name, 
+            # Adaptive affinity Parameter Passed When Creating Bar
+            bar = Bar(i, bar_fixed_affinities[i], name=name, 
                       adaptive_update_interval=adaptive_update_interval,
-                      tolerance_factor=tolerance_factor)
+                      affinity_factor=affinity_factor)
             self.bars.append(bar)
         
         # Create Agents
@@ -180,17 +180,17 @@ class LGBTQBarModel(mesa.Model):
             "WomenBar_QNW_Ratio": lambda m: self.get_bar_group_ratio(0, "QNW"),
             "WomenBar_Population": lambda m: self.get_bar_population(0),
             "WomenBar_IsLesbianBar": lambda m: int(self.bars[0].is_lesbian_bar),
-            "WomenBar_QW_AdaptiveTolerance": lambda m: self.bars[0].adaptive_tolerance["QW"],
-            "WomenBar_NQW_AdaptiveTolerance": lambda m: self.bars[0].adaptive_tolerance["NQW"],
-            "WomenBar_QNW_AdaptiveTolerance": lambda m: self.bars[0].adaptive_tolerance["QNW"],
+            "WomenBar_QW_AdaptiveAffinity": lambda m: self.bars[0].adaptive_affinity["QW"],
+            "WomenBar_NQW_AdaptiveAffinity": lambda m: self.bars[0].adaptive_affinity["NQW"],
+            "WomenBar_QNW_AdaptiveAffinity": lambda m: self.bars[0].adaptive_affinity["QNW"],
             "QueerBar_QW_Ratio": lambda m: self.get_bar_group_ratio(1, "QW"),
             "QueerBar_NQW_Ratio": lambda m: self.get_bar_group_ratio(1, "NQW"),
             "QueerBar_QNW_Ratio": lambda m: self.get_bar_group_ratio(1, "QNW"),
             "QueerBar_Population": lambda m: self.get_bar_population(1),
             "QueerBar_IsLesbianBar": lambda m: int(self.bars[1].is_lesbian_bar),
-            "QueerBar_QW_AdaptiveTolerance": lambda m: self.bars[1].adaptive_tolerance["QW"],
-            "QueerBar_NQW_AdaptiveTolerance": lambda m: self.bars[1].adaptive_tolerance["NQW"],
-            "QueerBar_QNW_AdaptiveTolerance": lambda m: self.bars[1].adaptive_tolerance["QNW"],
+            "QueerBar_QW_AdaptiveAffinity": lambda m: self.bars[1].adaptive_affinity["QW"],
+            "QueerBar_NQW_AdaptiveAffinity": lambda m: self.bars[1].adaptive_affinity["NQW"],
+            "QueerBar_QNW_AdaptiveAffinity": lambda m: self.bars[1].adaptive_affinity["QNW"],
             "TempExited_Agents": lambda m: self.count_temp_exited_agents(),
             "PermExited_Agents": lambda m: self.count_permanently_exited_agents(),  
             "Active_QW": lambda m: self.count_active_by_group("QW"),

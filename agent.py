@@ -17,37 +17,37 @@ BELONGING_STD_DEV = 0.3
 
 # Create Bar class to represent bars
 class Bar:
-    def __init__(self, unique_id, fixed_tolerance, name=None, gamma=0.5, adaptive_update_interval=10, tolerance_factor=0.01):
+    def __init__(self, unique_id, fixed_affinity, name=None, gamma=0.5, adaptive_update_interval=10, affinity_factor=0.01):
         self.unique_id = unique_id
         self.name = name
-        self.fixed_tolerance = fixed_tolerance
-        self.adaptive_tolerance = {group: 0 for group in IDENTITY_GROUPS} 
-        self.gamma = gamma  # Weight for fixed tolerance
+        self.fixed_affinity = fixed_affinity
+        self.adaptive_affinity = {group: 0 for group in IDENTITY_GROUPS} 
+        self.gamma = gamma  # Weight for fixed affinity
         
         # Bar visitor history
         self.visitor_history = []
         self.current_visitors = []
         self.update_count = 0  
         
-        # Parameters for adaptive tolerance
+        # Parameters for adaptive affinity
         self.adaptive_update_interval = adaptive_update_interval  # Update every X rounds
-        self.tolerance_factor = tolerance_factor  # Multiplier for visitor count
+        self.affinity_factor = affinity_factor  # Multiplier for visitor count
         
         # Bar cultural state
         self.is_lesbian_bar = True  # Initial state as a lesbian bar by default
         self.qw_ratio_history = []  # Record of QW ratio history
         
-    def calculate_effective_tolerance(self):
+    def calculate_effective_affinity(self):
         effective = {}
         for group in IDENTITY_GROUPS:
-            effective[group] = (self.gamma * self.fixed_tolerance[group] + 
-                              (1 - self.gamma) * self.adaptive_tolerance[group])
+            effective[group] = (self.gamma * self.fixed_affinity[group] + 
+                              (1 - self.gamma) * self.adaptive_affinity[group])
         return effective
     
-    def update_adaptive_tolerance(self, force=False):
+    def update_adaptive_affinity(self, force=False):
         self.update_count += 1
         
-        # Update adaptive tolerance every X rounds
+        # Update adaptive affinity every X rounds
         if self.update_count >= self.adaptive_update_interval or force:
             if len(self.visitor_history) > 0:
                 # Calculate average visitor counts for each group over last X rounds
@@ -66,11 +66,9 @@ class Bar:
                 # Calculate average visitors per round for each group
                 avg_counts = {group: visitor_counts[group] / history_range for group in IDENTITY_GROUPS}
                 
-                # Update adaptive tolerance directly based on average count * factor
+                # Update adaptive affinity directly based on average count * factor
                 for group in IDENTITY_GROUPS:
-                    self.adaptive_tolerance[group] = min(1.0, avg_counts[group] * self.tolerance_factor)
-                    
-                print(f"Bar {self.name} updated adaptive tolerance: {self.adaptive_tolerance}")
+                    self.adaptive_affinity[group] = min(1.0, avg_counts[group] * self.affinity_factor)
             
             # Check if still a lesbian bar 
             # (Average QW ratio below 30% for 10 rounds is considered de-lesbianization)
@@ -99,7 +97,7 @@ class Bar:
     
     def end_round(self):
         self.visitor_history.append(self.current_visitors.copy())
-        self.update_adaptive_tolerance()
+        self.update_adaptive_affinity()
     
     def get_current_population_ratios(self):
 
@@ -162,8 +160,8 @@ class PersonAgent:
         alpha = self.model.alpha  # Weight of structural inclusion
         
         # Get the bar’s current affinity for the agent's group
-        effective_tolerance = bar.calculate_effective_tolerance()
-        bar_tolerance = effective_tolerance[self.identity_group]
+        effective_affinity = bar.calculate_effective_affinity()
+        bar_affinity = effective_affinity[self.identity_group]
         
         # Compute influence of peer group composition
         population_ratios = bar.get_current_population_ratios()
@@ -176,7 +174,7 @@ class PersonAgent:
             social_belonging += group_belonging * population_ratios[other_group]
         
         # Combine structural and social components
-        total_belonging = (alpha * bar_tolerance) + ((1 - alpha) * social_belonging)
+        total_belonging = (alpha * bar_affinity) + ((1 - alpha) * social_belonging)
         
         return total_belonging
     
@@ -205,39 +203,35 @@ class PersonAgent:
                 if self.exit_attempts >= 3:  
                     self.status = "permanently_exited"
                     self.permanent_exit = True
-                    print(f"Agent {self.unique_id} ({self.identity_group}) has permanently exited the simulation after {self.exit_attempts} exits")
                     return None
                 else:
                     self.status = "active"
                     self.exit_counter = 0
                     self.clear_memories()
-                    print(f"Agent {self.unique_id} ({self.identity_group}) returned from temporary exit with reset memories")
             else:
                 return None
 
         current_step = getattr(self.model.schedule, 'steps', 0)
         
-        # During initial steps or after memory reset: choose based on bar tolerance
+        # During initial steps or after memory reset: choose based on bar affinity
         if current_step < 5 or all(len(self.memory[bar_id]) == 0 for bar_id in range(self.model.num_bars)):
-            # Calculate tolerance score for each bar
-            bar_tolerances = []
+            # Calculate affinity score for each bar
+            bar_affinities = []
             for bar_id, bar in enumerate(self.model.bars):
-                effective_tolerance = bar.calculate_effective_tolerance()
-                tolerance = effective_tolerance[self.identity_group]
-                bar_tolerances.append((bar_id, tolerance))
+                effective_affinity = bar.calculate_effective_affinity()
+                affinity = effective_affinity[self.identity_group]
+                bar_affinities.append((bar_id, affinity))
             
-            # Choose a bar weighted by tolerance
-            weights = [tol for _, tol in bar_tolerances]
-            bar_ids = [bid for bid, _ in bar_tolerances]
+            # Choose a bar weighted by Affinity
+            weights = [tol for _, tol in bar_affinities]
+            bar_ids = [bid for bid, _ in bar_affinities]
             
             if sum(weights) > 0:
                 chosen_bar = random.choices(bar_ids, weights=weights, k=1)[0]
-                print(f"Initial or post-exit: Agent {self.unique_id} chose bar {self.model.bars[chosen_bar].name} based on adaptive tolerance")
                 return chosen_bar
             else:
                 # If all weights are zero, pick randomly
                 chosen_bar = random.choice(range(self.model.num_bars))
-                print(f"Initial or post-exit: Agent {self.unique_id} randomly chose bar {self.model.bars[chosen_bar].name}")
                 return chosen_bar
         
         # After initial rounds: choose based on average remembered belonging
@@ -248,7 +242,6 @@ class PersonAgent:
             if self.memory[bar_id]:
                 avg_belonging = sum(self.memory[bar_id]) / len(self.memory[bar_id])
                 avg_belongings[bar_id] = avg_belonging
-                print(f"Agent {self.unique_id} average belonging for {self.model.bars[bar_id].name}: {avg_belonging:.2f}")
                 
                 # Bar is considered valid if average exceeds threshold
                 if avg_belonging >= self.threshold:
@@ -256,11 +249,9 @@ class PersonAgent:
         
         # No valid bar found: temporarily exit
         if not valid_bars:
-            print(f"Agent {self.unique_id} found no valid bars, threshold: {self.threshold}, entering temporary exit")
             self.status = "temp_exited"
             self.exit_counter = 0
             self.exit_attempts += 1
-            print(f"Agent {self.unique_id} exit attempt count now: {self.exit_attempts}")
             return None
         
         # Choose among valid bars based on remembered belonging
@@ -271,15 +262,12 @@ class PersonAgent:
             if total_belonging > 0:
                 probs = [valid_belongings[bar_id] / total_belonging for bar_id in valid_bars]
                 chosen_bar = random.choices(valid_bars, weights=probs, k=1)[0]
-                print(f"Agent {self.unique_id} chose {self.model.bars[chosen_bar].name}")
                 return chosen_bar
             else:
                 chosen_bar = random.choice(valid_bars)
-                print(f"Agent {self.unique_id} randomly chose {self.model.bars[chosen_bar].name}")
                 return chosen_bar
         
         return None
     
     def step(self):
-        """Placeholder for the step method - this will not be used with synchronized updates"""
         pass

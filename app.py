@@ -285,7 +285,7 @@ model_params = {
     ),
 
     "alpha": Slider(
-        label="Tolerance Weight (alpha)",
+        label="Affinity Weight (alpha)",
         value=0.4,
         min=0.0,
         max=1.0,
@@ -315,14 +315,14 @@ model_params = {
         step=0.05,
     ),
     "adaptive_update_interval": Slider(
-        label="Adaptive Tolerance Update Interval",
+        label="Adaptive Affinity Update Interval",
         value=10,
         min=1,
         max=30,
         step=1,
     ),
-    "tolerance_factor": Slider(
-        label="Tolerance Factor",
+    "affinity_factor": Slider(
+        label="Affinity Factor",
         value=0.01,
         min=0.01,
         max=0.1,

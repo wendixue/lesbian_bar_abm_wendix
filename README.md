@@ -10,6 +10,7 @@ Contains all model implementation files:
 - `agent.py` – Defines the `PersonAgent` and `Bar`class with identity attributes and belonging logic.
 - `model.py` – Defines the `LesbianBarABM` model, including bars’ cultural adaptation and agent-bar interactions.
 - `batch_run.py` – Runs systematic batch simulations across different `gamma` values and outputs results for analysis.
+- `batch_run_results.csv` – The results of batch_run.py.
 
 ### `figures/`
 Includes all simulation visualizations used in the report, such as agent spatial distributions, QW ratio plots, and effective affinity boxplots.
@@ -19,3 +20,6 @@ Main LaTeX file of the written report, prepared in Overleaf. It contains the ful
 
 ### `references.bib`
 BibTeX file listing all scholarly references cited in the report.
+
+### `batch_run_results.csv`
+The results of `batch_run.py`.

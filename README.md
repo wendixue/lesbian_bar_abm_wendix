@@ -7,7 +7,7 @@ This repository accompanies the final project *"Belonging and Drift: An Agent-Ba
 ### `codes/`
 Contains all model implementation files:
 - `app.py` – Launches the Mesa GUI interface to interactively visualize simulation dynamics.
-- `agent.py` – Defines the `PersonAgent` class with identity attributes and belonging logic.
+- `agent.py` – Defines the `PersonAgent` and `Bar`class with identity attributes and belonging logic.
 - `model.py` – Defines the `LesbianBarABM` model, including bars’ cultural adaptation and agent-bar interactions.
 - `batch_run.py` – Runs systematic batch simulations across different `gamma` values and outputs results for analysis.
 

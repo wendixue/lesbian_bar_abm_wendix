@@ -68,7 +68,7 @@ Collectively, these studies suggest that individual perceptions of cultural fit,
 
 While these literatures provide rich accounts of how individuals interpret and navigate lesbian spaces, they remain largely focused on the micro-level. They excel at describing identity negotiation, affective response, and localized inclusion and exclusion, but offer limited tools for analyzing how individual decisions accumulate over time to produce institutional and cultural change. To address this gap, this project employs an agent-based model that simulates how patterns of bar selection, withdrawal, and belonging evolve under different institutional strategies. By modeling the feedback loop between agents’ subjective evaluations and the changing cultural profile of each bar, the model offers a structural and process-based account of how lesbian spaces retain, transform, or lose their cultural identity in the face of strategic adaptation.
 
-\section*{Theoretical Causal Mechanism}
+\section{Theoretical Causal Mechanism}
 
 This project models a feedback loop between individual experiences of belonging and the cultural evolution of lesbian bars. It examines how patrons, guided by identity-specific sensibilities, respond to both institutional strategies and social atmospheres, and how these responses, in turn, reshape the identity of the space over time.
 
@@ -137,7 +137,7 @@ Each bar's orientation is encoded in two forms of affinity toward identity group
 
 \textbf{Adaptive Affinity:}
 \[
-\text{Adaptive Affinity}_g = \frac{\# \text{group } g \text{ visitors in recent rounds}}{\text{Total visitors in recent rounds}}
+\text{Adaptive Affinity}_g = \frac{\#\text{group } g \text{ visitors in recent rounds}}{\text{Total visitors in recent rounds}}
 \]
 
 where $g \in \{\text{QW}, \text{NQW}, \text{QNW}\}$, and the time window length is determined by a global update interval parameter.
@@ -350,9 +350,30 @@ In the simulation on the left($\gamma$ = 0.3), both bars rapidly adjust their ad
 
 In contrast, under $\gamma$ = 0.7, both bars remain much more culturally stable. The QW ratio stays within a narrower range (Figure 10), and effective affinity for QW remains consistently high in both spaces (Figure 12). As Figure 8 illustrates, agent distribution at step 100 shows well-maintained clustering around each bar, with limited QW withdrawal. These results suggest that higher gamma supports identity retention, at least within the range tested.
 
-Taken together, these simulations indicate that moderate to low adaptability may help lesbian spaces preserve symbolic cohesion, while overly flexible spaces are vulnerable to cultural drift. When bars overreact to short-term fluctuations in attendance, they risk abandoning their strategic core. At the same time, some degree of responsiveness may be necessary to avoid rigid exclusivity or demographic misalignment.
+To assess the robustness of this pattern, we conducted batch simulations at $\gamma = 0.3$, $0.5$, and $0.7$, with 20 independent runs for each setting. The results are visualized in Figure~13 and Figure~14, which display the distribution of final QW population ratios and effective affinity scores across both bar types. These boxplots reveal a clear monotonic trend: as $\gamma$ increases—that is, as bars become less socially adaptive and more structurally fixed—both the retention of queer women (QW) and the cultural alignment with QW patrons tend to increase.
 
-This trade-off mirrors real-world debates about inclusion, branding, and community accountability in lesbian and queer nightlife. Gamma provides a formal tool to explore these tensions, showing that the sustainability of identity-based space depends not only on who is allowed in, but also on how cultural signals are produced, interpreted, and revised over time.
+
+\begin{figure}[H]
+\centering
+\begin{minipage}{0.48\textwidth}
+  \centering
+  \includegraphics[width=\linewidth]{figures/batch ea.png}
+  \caption{QW Effective Affinity by Gamma and Bar Type}
+\end{minipage}
+\hfill
+\begin{minipage}{0.48\textwidth}
+  \centering
+  \includegraphics[width=\linewidth]{figures/batch ratio.png}
+  \caption{QW Ratio by Gamma and Bar Type}
+\end{minipage}
+\end{figure}
+
+
+At low adaptability levels ($\gamma = 0.3$), the QW ratio in queer-centered bars exhibits high volatility, with several runs showing near-zero presence, indicating severe identity drift. In contrast, higher $\gamma$ values produce more stable and elevated QW ratios in both bar types, with median values clustering around 0.5. A similar pattern holds for effective affinity scores: the distribution for $\gamma = 0.7$ is not only higher on average but also more tightly concentrated, suggesting stronger and more consistent symbolic alignment with QW participants.
+
+Together, these visualizations reinforce the conclusion that institutional adaptability shapes the long-term cultural trajectory of lesbian bars. When bars rely more on fixed identity structures, they are better able to preserve symbolic coherence and demographic continuity. Rather than being driven by stochastic fluctuations in early attendance, the link between lower adaptability and stronger identity retention emerges as systematic, robust, and repeatable across simulations.
+
+At the same time, some degree of responsiveness remains important: bars that entirely ignore recent participation patterns may risk becoming rigid or demographically misaligned. This trade-off between cultural stability and inclusiveness mirrors real-world debates about branding, belonging, and accountability in lesbian and queer nightlife. The parameter $\gamma$ provides a formal tool to explore these tensions, showing that the sustainability of identity-based space depends not only on who is allowed in, but also on how cultural signals are produced, interpreted, and revised over time.
 
 \section{Discussion}
 
